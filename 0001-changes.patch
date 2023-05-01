@@ -1,0 +1,166 @@
+From 13a527873d8cdbe0f9a7c900853982f7a57acd55 Mon Sep 17 00:00:00 2001
+From: brhee <byungyeonrhee@gmail.com>
+Date: Tue, 7 Jan 2020 20:45:51 +0900
+Subject: [PATCH] Brian Rhee changes
+
+---
+ src/Board.js    | 87 ++++++++++++++++++++++++++++++++++++++++++++++---
+ src/Card.js     |  2 +-
+ src/Swimlane.js |  7 +++-
+ 3 files changed, 89 insertions(+), 7 deletions(-)
+
+diff --git a/src/Board.js b/src/Board.js
+index 1f00045..91bade0 100644
+--- a/src/Board.js
++++ b/src/Board.js
+@@ -50,9 +50,9 @@ export default class Board extends React.Component {
+       status: companyDetails[3],
+     }));
+   }
+-  renderSwimlane(name, clients, ref) {
++  renderSwimlane(name, clients, ref, id) {
+     return (
+-      <Swimlane name={name} clients={clients} dragulaRef={ref}/>
++      <Swimlane name={name} clients={clients} id={id} ref={ref} />
+     );
+   }
+ 
+@@ -62,17 +62,94 @@ export default class Board extends React.Component {
+         <div className="container-fluid">
+           <div className="row">
+             <div className="col-md-4">
+-              {this.renderSwimlane('Backlog', this.state.clients.backlog, this.swimlanes.backlog)}
++              {this.renderSwimlane('Backlog', this.state.clients.backlog, this.swimlanes.backlog, 'backlog')}
+             </div>
+             <div className="col-md-4">
+-              {this.renderSwimlane('In Progress', this.state.clients.inProgress, this.swimlanes.inProgress)}
++              {this.renderSwimlane('In Progress', this.state.clients.inProgress, this.swimlanes.inProgress, 'in-progress')}
+             </div>
+             <div className="col-md-4">
+-              {this.renderSwimlane('Complete', this.state.clients.complete, this.swimlanes.complete)}
++              {this.renderSwimlane('Complete', this.state.clients.complete, this.swimlanes.complete, 'complete')}
+             </div>
+           </div>
+         </div>
+       </div>
+     );
+   }
++
++  componentDidMount() {
++    const backlogDOMNode = this.swimlanes.backlog.current.cardsRef.current;
++    const inProgressDOMNode = this.swimlanes.inProgress.current.cardsRef.current;
++    const completeDomNode = this.swimlanes.complete.current.cardsRef.current;
++
++    const drake = Dragula([backlogDOMNode, inProgressDOMNode, completeDomNode])
++      .on('drop', (el, target, source) => {
++        const newRowNum = Array.from(target.children).findIndex(cardNode => cardNode.id === el.id);
++
++        // cancel modifying the DOM externally
++        drake.cancel(true);
++
++        // update state data, which re-renders the view correctly
++        this.updateCardIntoSwimlane(el.id, newRowNum, source.id, target.id);
++    });
++  }
++
++  updateCardIntoSwimlane(cardId, rowNum, sourceId, targetId) {
++    // update 'status' field in the card data (this prop determines color)
++    let sourceSwimlane = this.getSwimlaneStateFromId(sourceId);
++    let cardData = sourceSwimlane.find(card => card.id === cardId);
++    cardData.status = targetId;
++
++    // update state for source lane
++    sourceSwimlane = sourceSwimlane.filter(card => card.id !== cardId);
++    this.updateSwimlaneData(sourceId, sourceSwimlane);
++
++    // update state for target lane
++    let targetSwimlane = this.getSwimlaneStateFromId(targetId);
++    targetSwimlane.splice(rowNum, 0, cardData);
++    this.updateSwimlaneData(targetId, targetSwimlane);
++  }
++
++  getSwimlaneStateFromId(swimlaneId) {
++    switch (swimlaneId) {
++      case 'backlog':
++        return this.state.clients.backlog;
++      case 'in-progress':
++        return this.state.clients.inProgress;
++      case 'complete':
++        return this.state.clients.complete;
++      default:
++        console.error('Unrecognized swimlane!');
++    }
++  }
++
++  updateSwimlaneData(swimlaneId, swimlaneData) {
++    switch (swimlaneId) {
++      case 'backlog':
++        this.setState({
++          clients: {
++            ...this.state.clients,
++            backlog: swimlaneData,
++          },
++        });
++        return;
++      case 'in-progress':
++        this.setState({
++          clients: {
++            ...this.state.clients,
++            inProgress: swimlaneData,
++          },
++        });
++        return;
++      case 'complete':
++        this.setState({
++          clients: {
++            ...this.state.clients,
++            complete: swimlaneData,
++          },
++        });
++        return;
++      default:
++        console.error('Unrecognized swimlane!');
++    }
++  }
+ }
+diff --git a/src/Card.js b/src/Card.js
+index a8ad663..d8782ff 100644
+--- a/src/Card.js
++++ b/src/Card.js
+@@ -12,7 +12,7 @@ export default class Card extends React.Component {
+       className.push('Card-green');
+     }
+     return (
+-      <div className={className.join(' ')} data-id={this.props.id} data-status={this.props.status}>
++      <div className={className.join(' ')} id={this.props.id} data-status={this.props.status}>
+         <div className="Card-title">{this.props.name}</div>
+       </div>
+     );
+diff --git a/src/Swimlane.js b/src/Swimlane.js
+index 7e6e0d0..c7339ec 100644
+--- a/src/Swimlane.js
++++ b/src/Swimlane.js
+@@ -3,6 +3,11 @@ import Card from './Card';
+ import './Swimlane.css';
+ 
+ export default class Swimlane extends React.Component {
++  constructor(props) {
++    super(props);
++    this.cardsRef = React.createRef();
++  }
++
+   render() {
+     const cards = this.props.clients.map(client => {
+       return (
+@@ -18,7 +23,7 @@ export default class Swimlane extends React.Component {
+     return (
+       <div className="Swimlane-column">
+         <div className="Swimlane-title">{this.props.name}</div>
+-        <div className="Swimlane-dragColumn" ref={this.props.dragulaRef}>
++        <div className="Swimlane-dragColumn" id={this.props.id} ref={this.cardsRef}>
+           {cards}
+         </div>
+       </div>);
+-- 
+2.23.0
+
